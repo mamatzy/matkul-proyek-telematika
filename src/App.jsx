@@ -1,11 +1,12 @@
 import { useEffect, useReducer, useState } from 'react'
 import {
-  Activity, AlertTriangle, ArrowLeft, Car, Cpu, MemoryStick, RotateCcw,
-  ScrollText, Server, ShieldCheck, Siren, Thermometer, Timer, TrendingUp,
+  Activity, AlertTriangle, ArrowLeft, ArrowUp, Car, Cpu, CornerUpRight, MemoryStick, RotateCcw,
+  ScrollText, Server, ShieldCheck, Siren, SlidersHorizontal, Thermometer, Timer, TrendingUp,
   Video, Wifi, WifiOff,
 } from 'lucide-react'
 
 /* ───────────── mock data & helpers ───────────── */
+const blank = (c = 'RED') => Object.fromEntries(Object.keys(DIRS).map((d) => [d, { straight: c, right: c }]))
 
 const DIRS = {
   N: { name: 'North Bound', role: 'Master', latency: null },
@@ -35,6 +36,7 @@ function init() {
   const vehicles = { N: 15, E: 9, S: 12, W: 6 }
   return {
     idx: 0, total: dur(vehicles.N), left: 27, emergency: false, vehicles,
+    manual: false, signals: blank(),
     cpu: 62.4, ram: 47.8, clock: now(),
     logs: [
       { t: '08:41:12', kind: 'fsm', msg: 'Phase changed: South green for 36s' },
@@ -53,7 +55,28 @@ function reducer(s, a) {
     return { ...s, emergency, logs: [{ t: now(), kind: 'emg', msg }, ...s.logs].slice(0, 20) }
   }
   const base = { ...s, clock: now(), cpu: drift(s.cpu, 54, 74, 1.4), ram: drift(s.ram, 41, 56, 1) }
-  if (s.emergency) return base
+    if (a.type === 'manual-toggle') {
+    if (s.emergency) return s
+    const manual = !s.manual
+    const signals = manual
+      ? Object.fromEntries(Object.keys(DIRS).map((d) => {
+          const st = lampStatus(s, d)
+          const c = st.safe ? 'RED' : st.color
+          return [d, { straight: c, right: c }]
+        }))
+      : s.signals
+    const msg = manual ? 'Manual override on, adaptive FSM paused' : 'Manual override off, adaptive FSM resumed'
+    return { ...s, manual, signals, logs: [{ t: now(), kind: 'manual', msg }, ...s.logs].slice(0, 20) }
+  }
+  if (a.type === 'manual-set') {
+    const { dir, set, color } = a
+    const msg = `Manual: ${DIRS[dir].name.split(' ')[0]} ${set} set to ${color}`
+    return { ...s, signals: { ...s.signals, [dir]: { ...s.signals[dir], [set]: color } }, logs: [{ t: now(), kind: 'manual', msg }, ...s.logs].slice(0, 20) }
+  }
+  if (a.type === 'manual-all') {
+    return { ...s, signals: blank(), logs: [{ t: now(), kind: 'manual', msg: 'Manual: all heads set to RED' }, ...s.logs].slice(0, 20) }
+  }
+  if (s.emergency || s.manual) return base
   if (s.left > 1) return { ...base, left: s.left - 1 }
 
   const idx = (s.idx + 1) % ORDER.length
@@ -66,6 +89,7 @@ function reducer(s, a) {
 }
 
 function lampStatus(s, dir) {
+  if (s.manual && !s.emergency) return { color: s.signals[dir].straight, dur: null, note: 'Manual override' }
   if (SAFE[dir]) return { color: 'YELLOW', dur: null, note: 'Flashing amber (safe mode)', safe: true }
   if (s.emergency) return { color: 'RED', dur: null, note: 'Emergency all-red' }
   if (ORDER[s.idx] === dir) return { color: s.left <= 3 ? 'YELLOW' : 'GREEN', dur: s.total, left: s.left }
@@ -248,6 +272,13 @@ function PhaseCard({ state }) {
         <p className="mt-2 text-sm text-slate-400">Adaptive control is paused. All lamps are holding red.</p>
       </Card>
     )
+  if (state.manual)
+    return (
+      <Card title="Current active phase" icon={Timer} className="border-amber-500/40">
+        <p className="font-display text-5xl font-bold text-amber-400">Manual</p>
+        <p className="mt-2 text-sm text-slate-400">Adaptive FSM is paused. Lamps follow the manual control card.</p>
+      </Card>
+    )
   return (
     <Card title="Current active phase" icon={Timer} right={<Badge color={state.left <= 3 ? 'YELLOW' : 'GREEN'}>{state.left <= 3 ? 'YELLOW' : 'GREEN'}</Badge>}>
       <div className="flex items-end justify-between gap-4">
@@ -376,6 +407,7 @@ function ActionsCard({ emergency, onToggle }) {
 }
 
 const LOG_ICON = {
+  manual: { i: SlidersHorizontal, c: 'text-violet-400' },
   fsm: { i: Activity, c: 'text-sky-400' },
   net: { i: Wifi, c: 'text-emerald-400' },
   warn: { i: AlertTriangle, c: 'text-amber-400' },
@@ -401,6 +433,138 @@ function LogsCard({ logs }) {
   )
 }
 
+const NAMA = { N: 'Utara', E: 'Timur', S: 'Selatan', W: 'Barat' }
+const WARNA = { RED: 'merah', YELLOW: 'kuning', GREEN: 'hijau' }
+const OPPOSITE = { N: 'S', S: 'N', E: 'W', W: 'E' }
+const SETS = [
+  { key: 'straight', label: 'Lurus', icon: ArrowUp },
+  { key: 'right', label: 'Kanan', icon: CornerUpRight },
+]
+
+// Dua kepala lampu bentrok jika: arah tegak lurus (apa pun), atau arah berlawanan
+// dengan satu lurus dan satu belok kanan. Satu arah yang sama tidak bentrok.
+function conflicts(a, b) {
+  if (a[0] === b[0]) return false
+  if (OPPOSITE[a[0]] === b[0]) return a[1] !== b[1]
+  return true
+}
+
+function SignalHead({ color, onPick, disabled, label, icon: Icon }) {
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <div className="flex flex-col gap-1.5 rounded-xl border border-[#232c36] bg-[#0c1116] p-2">
+        {['RED', 'YELLOW', 'GREEN'].map((c) => {
+          const on = color === c
+          return (
+            <button
+              key={c} type="button" disabled={disabled} onClick={() => onPick(c)}
+              aria-label={`${label}: ${WARNA[c]}`} aria-pressed={on}
+              className={`h-8 w-8 rounded-full border transition focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${disabled ? 'cursor-not-allowed' : 'hover:scale-110'}`}
+              style={{
+                background: on ? TONE[c].hex : '#1a222b',
+                borderColor: on ? TONE[c].hex : '#2b3540',
+                boxShadow: on ? `0 0 14px ${TONE[c].hex}66` : 'none',
+              }}
+            />
+          )
+        })}
+      </div>
+      <span className="flex items-center gap-1 text-xs font-semibold text-slate-400"><Icon size={13} />{label}</span>
+    </div>
+  )
+}
+
+function ManualCard({ state, dispatch }) {
+  const [notice, setNotice] = useState(null)
+  useEffect(() => {
+    if (!notice) return
+    const t = setTimeout(() => setNotice(null), 4000)
+    return () => clearTimeout(t)
+  }, [notice])
+
+  const { manual, emergency } = state
+  const editable = manual && !emergency
+  const view = (d) => {
+    if (editable) return state.signals[d]
+    const c = lampStatus(state, d).color
+    return { straight: c, right: c }
+  }
+
+  const pick = (dir, set, color) => {
+    if (color !== 'RED') {
+      for (const d of Object.keys(DIRS)) {
+        for (const { key, label } of SETS) {
+          const other = state.signals[d][key]
+          if (other !== 'RED' && conflicts([dir, set], [d, key])) {
+            const mine = SETS.find((x) => x.key === set).label
+            setNotice(`Ditolak: ${NAMA[dir]} ${mine} tidak bisa ${WARNA[color]} karena ${NAMA[d]} ${label} masih ${WARNA[other]}. Merahkan dulu lampu yang bentrok.`)
+            return
+          }
+        }
+      }
+    }
+    setNotice(null)
+    dispatch({ type: 'manual-set', dir, set, color })
+  }
+
+  return (
+    <Card
+      title="Kontrol lampu manual"
+      icon={SlidersHorizontal}
+      right={
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => { setNotice(null); dispatch({ type: 'manual-all' }) }}
+            disabled={!editable}
+            className="rounded-lg border border-[#2b3540] bg-[#1a222b] px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-[#222c37] disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Semua merah
+          </button>
+          <button
+            role="switch" aria-checked={manual} disabled={emergency}
+            onClick={() => { setNotice(null); dispatch({ type: 'manual-toggle' }) }}
+            className={`rounded-lg px-3 py-1.5 text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-40 ${manual ? 'bg-amber-400 text-slate-900' : 'bg-sky-500/15 text-sky-300 hover:bg-sky-500/25'}`}
+          >
+            {manual ? 'Mode manual aktif' : 'Aktifkan mode manual'}
+          </button>
+        </div>
+      }
+    >
+      <p className="mb-4 text-sm text-slate-500">
+        {emergency
+          ? 'Emergency all-red aktif, kontrol manual dikunci.'
+          : manual
+            ? 'FSM adaptif dijeda. Klik bulatan lampu untuk mengubah warna. Hijau yang bentrok akan ditolak.'
+            : 'Menampilkan status lampu otomatis. Aktifkan mode manual untuk mengubah lampu (FSM adaptif dijeda).'}
+      </p>
+      {notice && (
+        <p role="alert" className="mb-4 flex items-start gap-2 rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-300 ring-1 ring-rose-500/30">
+          <AlertTriangle size={16} className="mt-0.5 shrink-0" />{notice}
+        </p>
+      )}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {Object.keys(DIRS).map((d) => (
+          <div key={d} className="rounded-xl border border-[#232c36] bg-[#10161c] p-4">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="font-display text-lg font-bold text-slate-100">{DIRS[d].name}</h3>
+              {SAFE[d] ? <Badge color="YELLOW">Timeout</Badge> : <span className="text-xs text-slate-500">{DIRS[d].role}</span>}
+            </div>
+            <div className="flex justify-around">
+              {SETS.map((s) => (
+                <SignalHead
+                  key={s.key} label={s.label} icon={s.icon}
+                  color={view(d)[s.key]} disabled={!editable}
+                  onPick={(c) => pick(d, s.key, c)}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  )
+}
+
 /* ───────────── pages ───────────── */
 
 function Header({ state, right }) {
@@ -414,7 +578,7 @@ function Header({ state, right }) {
         </div>
       </div>
       <div className="flex items-center gap-3">
-        {state.emergency ? <Badge color="RED" pulse>EMERGENCY ALL-RED</Badge> : <Badge color="GREEN">ADAPTIVE MODE</Badge>}
+        {state.emergency ? <Badge color="RED" pulse>EMERGENCY ALL-RED</Badge> : state.manual ? <Badge color="YELLOW">MANUAL OVERRIDE</Badge> : <Badge color="GREEN">ADAPTIVE MODE</Badge>}
         <span className="font-display text-2xl tabular-nums text-slate-300">{state.clock}</span>
       </div>
     </header>
@@ -460,6 +624,8 @@ function Dashboard({ state, dispatch, open, layout, setLayout }) {
         <div className="lg:col-span-4"><PhaseCard state={state} /></div>
         <div className="lg:col-span-3 lg:row-span-2"><HealthCard state={state} /></div>
         <div className="lg:col-span-4"><ActionsCard emergency={state.emergency} onToggle={() => dispatch({ type: 'emergency' })} /></div>
+        <div className="lg:col-span-4"><ActionsCard emergency={state.emergency} onToggle={() => dispatch({ type: 'emergency' })} /></div>
+        <div className="lg:col-span-12"><ManualCard state={state} dispatch={dispatch} /></div>
         <div className="lg:col-span-7"><TrendCard /></div>
         <div className="lg:col-span-5"><LogsCard logs={state.logs} /></div>
       </div>

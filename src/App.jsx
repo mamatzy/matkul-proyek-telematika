@@ -624,7 +624,6 @@ function Dashboard({ state, dispatch, open, layout, setLayout }) {
         <div className="lg:col-span-4"><PhaseCard state={state} /></div>
         <div className="lg:col-span-3 lg:row-span-2"><HealthCard state={state} /></div>
         <div className="lg:col-span-4"><ActionsCard emergency={state.emergency} onToggle={() => dispatch({ type: 'emergency' })} /></div>
-        <div className="lg:col-span-4"><ActionsCard emergency={state.emergency} onToggle={() => dispatch({ type: 'emergency' })} /></div>
         <div className="lg:col-span-12"><ManualCard state={state} dispatch={dispatch} /></div>
         <div className="lg:col-span-7"><TrendCard /></div>
         <div className="lg:col-span-5"><LogsCard logs={state.logs} /></div>

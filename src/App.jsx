@@ -1,9 +1,10 @@
 import { useEffect, useReducer, useState } from 'react'
 import {
-  Activity, AlertTriangle, ArrowLeft, ArrowUp, Car, Cpu, CornerUpRight, MemoryStick, RotateCcw,
-  ScrollText, Server, ShieldCheck, Siren, SlidersHorizontal, Thermometer, Timer, TrendingUp,
+  Activity, AlertTriangle, ArrowLeft, ArrowUp, Car, Cpu, CornerUpRight, LayoutDashboard, MemoryStick, RotateCcw,
+  ScrollText, Server, Settings, ShieldCheck, Siren, SlidersHorizontal, Thermometer, Timer, TrendingUp,
   Video, Wifi, WifiOff,
 } from 'lucide-react'
+import ConfigEditor from './ConfigEditor.jsx'
 
 /* ───────────── mock data & helpers ───────────── */
 const blank = (c = 'RED') => Object.fromEntries(Object.keys(DIRS).map((d) => [d, { straight: c, right: c }]))
@@ -567,7 +568,16 @@ function ManualCard({ state, dispatch }) {
 
 /* ───────────── pages ───────────── */
 
-function Header({ state, right }) {
+function Header({ state, right, page, onNavigate }) {
+  const nav = (id, label, Icon) => (
+    <button
+      key={id}
+      onClick={() => onNavigate(id)}
+      className={`flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${page === id ? 'bg-sky-500/20 text-sky-300 ring-1 ring-sky-500/30' : 'text-slate-400 hover:bg-[#1a222b] hover:text-slate-200'}`}
+    >
+      <Icon size={15} />{label}
+    </button>
+  )
   return (
     <header className="mb-6 flex flex-wrap items-center justify-between gap-4">
       <div className="flex items-center gap-3">
@@ -575,6 +585,10 @@ function Header({ state, right }) {
         <div>
           <h1 className="font-display text-3xl font-bold text-slate-100">Location Node 01</h1>
           <p className="text-sm text-slate-500">Adaptive signal control, edge dashboard</p>
+          <nav className="mt-2 flex flex-wrap gap-1">
+            {nav('dashboard', 'Dashboard', LayoutDashboard)}
+            {nav('config', 'Konfigurasi', Settings)}
+          </nav>
         </div>
       </div>
       <div className="flex items-center gap-3">
@@ -585,10 +599,10 @@ function Header({ state, right }) {
   )
 }
 
-function Dashboard({ state, dispatch, open, layout, setLayout }) {
+function Dashboard({ state, dispatch, open, layout, setLayout, page, onNavigate }) {
   return (
     <>
-      <Header state={state} />
+      <Header state={state} page={page} onNavigate={onNavigate} />
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
         <Card
           title="Intersection map"
@@ -740,11 +754,13 @@ function CameraTile({ dir, state, feed, stale }) {
     </article>
   )
 }
-function Monitoring({ state, back, feeds, connected }) {
+function Monitoring({ state, back, feeds, connected, page, onNavigate }) {
   return (
     <>
       <Header
         state={state}
+        page={page}
+        onNavigate={onNavigate}
         right={
           <button onClick={back} className="flex items-center gap-2 rounded-lg border border-[#2b3540] bg-[#141a21] px-3 py-2 text-sm font-semibold text-slate-200 transition hover:bg-[#1b232c] focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
             <ArrowLeft size={16} />Back to dashboard
@@ -779,9 +795,15 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#0c1116] p-4 font-sans text-slate-200 md:p-8">
       <div className="mx-auto max-w-[1400px]">
-        {page === 'dashboard'
-          ? <Dashboard state={state} dispatch={dispatch} open={() => setPage('monitor')} layout={layout} setLayout={setLayout} />
-          : <Monitoring state={state} back={() => setPage('dashboard')} feeds={feeds} connected={connected} />}
+        {page === 'dashboard' && (
+          <Dashboard state={state} dispatch={dispatch} open={() => setPage('monitor')} layout={layout} setLayout={setLayout} page={page} onNavigate={setPage} />
+        )}
+        {page === 'monitor' && (
+          <Monitoring state={state} back={() => setPage('dashboard')} feeds={feeds} connected={connected} page={page} onNavigate={setPage} />
+        )}
+        {page === 'config' && (
+          <ConfigEditor state={state} page={page} onNavigate={setPage} />
+        )}
       </div>
     </div>
   )

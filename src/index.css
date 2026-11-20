@@ -1,5 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;600&family=Barlow+Condensed:wght@700&display=swap');
 @import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
 @theme {
   --font-sans: 'Barlow', ui-sans-serif, system-ui, sans-serif;
   --font-display: 'Barlow Condensed', 'Barlow', sans-serif;
